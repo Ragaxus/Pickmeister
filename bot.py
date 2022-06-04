@@ -64,36 +64,49 @@ class Pickmeister:
 
     def make_embed_content(self, input):
         """Given the content of a message, creates the embed for that message."""
-        matches = [re.match(r"(\d+) (.+)", line) for line in input.splitlines()]
-        quantities = [m.group(1) for m in matches]
-        names = [m.group(2) for m in matches]
-        all_set_info = self.get_all_sets_of_cards(names)
+        rgx = r"(?:(?P<quantity>\d+) )?(?P<name>.+)"
+        matches = [re.match(rgx, line) for line in input.splitlines()]
+        quantities = [m.groupdict()["quantity"] for m in matches]
+        names = [m.groupdict()["name"] for m in matches]
+        cards_info = self.fetch_cards_info(names)
         output_lines = []
+        error_lines = []
         for (i,name) in enumerate(names):
-            if all_set_info[name] is not None:
-                set_info = ', '.join(all_set_info[name]).upper() 
-            else: 
-                set_info = 'set info not found'    
-            output_lines.append(f"**{quantities[i]} {name}** *({set_info})*")
-        return '\n'.join(output_lines)
+            if cards_info[name] is not None:
+                set_info = ', '.join(cards_info[name]["sets"]).upper() 
+                output_lines.append(f"**{quantities[i] or 1} {name}** ({cards_info[name]['color']}) *({set_info})*")
+            else:
+                error_lines.append(name)
+        return '\n'.join(output_lines) + "\n\nCould not find data for: \n" + '\n'.join(error_lines)
 
-    def get_all_sets_of_cards(self,names):
+    def fetch_cards_info(self,names):
         set_info = {}
         for name in names:
             request = {"q": f'!"{name}"', "unique": "prints"}
             response = requests.get("https://api.scryfall.com/cards/search", headers={'Cache-Control': 'no-cache'}, params=request)
+            card_info = response.json()
             if response.status_code == 200:
-                sets = list(set(list(map(lambda card: card["set"], response.json()["data"]))))
+                sets = list(set(list(map(lambda card: card["set"], card_info["data"]))))
+                color = self.get_card_color(card_info["data"][0])
+                set_info[name] = {"sets": sets, "color": color}
             else:
-                sets = None
-            set_info[name] = sets
+                set_info[name] = None
         return set_info
+    
+    def get_card_color(self, card):
+        if "Land" in card["type_line"]:
+            return "L"
+        elif len(card["colors"]) > 1:
+            return "M"
+        else:
+            return card["colors"][0]
 
 
 def test_make_embed_content():
-    example_input = """1 Shock
+    example_input = """Shock
 3 Snow-Covered Swamp
-1 Beck // Call"""
+1 Beck // Call
+asdf"""
 
     print(Pickmeister().make_embed_content(example_input))
 
