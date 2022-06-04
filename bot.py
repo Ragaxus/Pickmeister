@@ -4,13 +4,11 @@ Google spreadsheet."""
 
 import os
 import re
-import json
 from datetime import date
-from xml.etree.ElementTree import PI
+import time
 
 import requests
 
-import chardet
 from dotenv import load_dotenv
 import discord
 
@@ -38,26 +36,32 @@ class Pickmeister:
                     return
             """The function that handles both DMs and channel messages."""
             if not msg.guild: # (i.e. it is a DM):
-                content = msg.content
-                desc = self.make_embed_content(content)
-                embed=discord.Embed(title=f'Pull for {date.today().strftime("%m/%d/%Y")}', description=desc, color=0xFF5733)
-                embed_message = await self.channel.send(embed=embed)
-                await embed_message.add_reaction(clear_react_emoji)
-                await msg.channel.send(embed_message.jump_url)
+                try:
+                    await msg.channel.send("Fetching card data...")
+                    content = msg.content
+                    desc = self.make_embed_content(content)
+                    embed=discord.Embed(title=f'Pull for {date.today().strftime("%m/%d/%Y")}', description=desc, color=0xFF5733)
+                    embed_message = await self.channel.send(embed=embed)
+                    await embed_message.add_reaction(clear_react_emoji)
+                    await msg.channel.send(embed_message.jump_url)
+                except:
+                    await msg.channel.send("An error occurred; please contact store to resolve.")
 
         @client.event
         async def on_raw_reaction_add(payload):  
             """When a user reacts with X, delete the post."""
             channel = client.get_channel(payload.channel_id)
             if payload.member.id == client.user.id:
-                    return
-            msg = await channel.fetch_message(payload.message_id)
-            if msg.channel.type == discord.ChannelType.private:
+                return
+            try:
+                msg = await channel.fetch_message(payload.message_id)
+                if msg.channel.type == discord.ChannelType.private:
+                    pass
+                emoji = payload.emoji.name #This is the unicode codepoint of the emoji
+                if emoji == clear_react_emoji:
+                    await msg.delete()
+            except:
                 pass
-            emoji = payload.emoji.name #This is the unicode codepoint of the emoji
-            if emoji == clear_react_emoji:
-                await msg.delete()
-
     
     def run(self):
         self.client.run(self.DISCORD_TOKEN)
@@ -77,13 +81,17 @@ class Pickmeister:
                 output_lines.append(f"**{quantities[i] or 1} {name}** ({cards_info[name]['color']}) *({set_info})*")
             else:
                 error_lines.append(name)
-        return '\n'.join(output_lines) + "\n\nCould not find data for: \n" + '\n'.join(error_lines)
+        if len(error_lines) > 0:
+            output_lines.append("\nCould not find data for: ")
+            output_lines += error_lines
+        return '\n'.join(output_lines)
 
     def fetch_cards_info(self,names):
         set_info = {}
         for name in names:
             request = {"q": f'!"{name}"', "unique": "prints"}
             response = requests.get("https://api.scryfall.com/cards/search", headers={'Cache-Control': 'no-cache'}, params=request)
+            time.sleep(.05)
             card_info = response.json()
             if response.status_code == 200:
                 sets = list(set(list(map(lambda card: card["set"], card_info["data"]))))
@@ -93,22 +101,51 @@ class Pickmeister:
                 set_info[name] = None
         return set_info
     
-    def get_card_color(self, card):
+    def get_card_color(self, card_data):
+        if "card_faces" in card_data:
+            card = card_data["card_faces"][0]
+        else:
+            card = card_data 
+        if "colors" in card_data:
+            colors = card_data["colors"]
+        else:
+            colors = card["colors"]
         if "Land" in card["type_line"]:
             return "L"
-        elif len(card["colors"]) > 1:
+        elif len(colors) > 1:
             return "M"
-        else:
-            return card["colors"][0]
+        elif len(colors) > 0:
+            return colors[0]
+        elif "Artifact" in card["type_line"]:
+            return "A"
 
 
 def test_make_embed_content():
-    example_input = """Shock
-3 Snow-Covered Swamp
-1 Beck // Call
-asdf"""
+    example_input = """"4 Burglar Rat
+3 Canyon Slough
+2 Concealing Curtains // Revealing Eye
+3 Dash Hopes
+3 Defile
+2 Extirpate
+3 Grenzo, Dungeon Warden
+4 Lightning Bolt
+4 Mountain
+2 Nezumi Shortfang // Stabwhisker the Odious
+2 Reckoner's Bargain
+3 Slavering Nulls
+3 Stormfist Crusader
+4 Sudden Edict
+6 Swamp
+3 Temple of Malice
+2 Tourach, Dread Cantor
+2 Unearth
+4 Virus Beetle
+1 Witch's Cottage"""
 
     print(Pickmeister().make_embed_content(example_input))
 
 if __name__ == '__main__':
-    Pickmeister().run()
+    if os.getenv('ENVIRONMENT') == 'test':
+        test_make_embed_content()
+    else:
+        Pickmeister().run()
