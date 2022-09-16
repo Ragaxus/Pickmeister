@@ -68,17 +68,18 @@ class Pickmeister:
 
     def make_embed_content(self, input):
         """Given the content of a message, creates the embed for that message."""
-        rgx = r"(?:(?P<quantity>\d+) )?(?P<name>.+)"
+        rgx = r"(?:(?P<quantity>\d+) )?(?:(?P<name>[^{]+))( \{(?:(?P<annotation>.+))\}){0,1}$"
         matches = [re.match(rgx, line) for line in input.splitlines()]
         quantities = [m.groupdict()["quantity"] for m in matches]
         names = [m.groupdict()["name"] for m in matches]
+        annotations = [m.groupdict()["annotation"] for m in matches]
         cards_info = self.fetch_cards_info(names)
         output_lines = []
         error_lines = []
         for (i,name) in enumerate(names):
             if cards_info[name] is not None:
                 set_info = ', '.join(cards_info[name]["sets"]).upper() 
-                output_lines.append(f"**{quantities[i] or 1} {name}** ({cards_info[name]['color']}) *({set_info})*")
+                output_lines.append(f"**{quantities[i] or 1} {name}{', '+annotations[i] if annotations[i] else ''}** ({cards_info[name]['color']}) *({set_info})*")
             else:
                 error_lines.append(name)
         if len(error_lines) > 0:
@@ -118,34 +119,9 @@ class Pickmeister:
             return colors[0]
         elif "Artifact" in card["type_line"]:
             return "A"
+        else:
+            return "C"
 
-
-def test_make_embed_content():
-    example_input = """"4 Burglar Rat
-3 Canyon Slough
-2 Concealing Curtains // Revealing Eye
-3 Dash Hopes
-3 Defile
-2 Extirpate
-3 Grenzo, Dungeon Warden
-4 Lightning Bolt
-4 Mountain
-2 Nezumi Shortfang // Stabwhisker the Odious
-2 Reckoner's Bargain
-3 Slavering Nulls
-3 Stormfist Crusader
-4 Sudden Edict
-6 Swamp
-3 Temple of Malice
-2 Tourach, Dread Cantor
-2 Unearth
-4 Virus Beetle
-1 Witch's Cottage"""
-
-    print(Pickmeister().make_embed_content(example_input))
 
 if __name__ == '__main__':
-    if os.getenv('ENVIRONMENT') == 'test':
-        test_make_embed_content()
-    else:
         Pickmeister().run()
